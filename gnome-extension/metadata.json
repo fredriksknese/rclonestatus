@@ -1,0 +1,6 @@
+{
+  "uuid": "onedrive-sync@fredrik.local",
+  "name": "OneDrive Sync",
+  "description": "Top-bar status for the rclone OneDrive bisync timer",
+  "shell-version": ["48"]
+}

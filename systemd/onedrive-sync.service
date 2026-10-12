@@ -1,0 +1,10 @@
+[Unit]
+Description=rclone bisync OneDrive <-> ~/OneDrive
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/bin/onedrive-sync
+Nice=10
+IOSchedulingClass=idle

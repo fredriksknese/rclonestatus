@@ -1,0 +1,46 @@
+#!/bin/bash
+# Two-way sync between OneDrive: and ~/OneDrive using rclone bisync.
+# Pass --resync to (re)establish the baseline (needed first time or after filter changes).
+LOG="$HOME/.local/state/rclone/onedrive-bisync.log"
+STATUS="$HOME/.local/state/rclone/onedrive-status.ini"
+start=$(wc -l < "$LOG" 2>/dev/null || echo 0)
+
+# Status file read by the "OneDrive Sync" GNOME Shell top-bar extension
+set_status() { # state copied deleted message
+  local tmp="$STATUS.tmp"
+  mkdir -p "${STATUS%/*}"
+  printf '[status]\nstate=%s\ntime=%s\ncopied=%s\ndeleted=%s\nmessage=%s\n' \
+    "$1" "$(date +%s)" "${2:-0}" "${3:-0}" "${4//$'\n'/ }" > "$tmp" && mv -f "$tmp" "$STATUS"
+}
+
+set_status syncing
+trap 'set_status error 0 0 "Sync was interrupted"; exit 143' TERM INT
+
+rclone bisync OneDrive: "$HOME/OneDrive" \
+  --filters-file "$HOME/.config/rclone/onedrive-bisync-filters.txt" \
+  --create-empty-src-dirs \
+  --compare size,modtime \
+  --conflict-resolve newer --conflict-loser num \
+  --resync-mode newer \
+  --resilient --recover --max-lock 3h \
+  --max-delete 50 \
+  --fast-list --onedrive-delta \
+  --retries 3 --retries-sleep 2m --low-level-retries 20 \
+  --checkers 16 --transfers 8 \
+  --log-file "$LOG" --log-level INFO \
+  "$@"
+rc=$?
+
+# Update the top-bar widget; only failures get a popup notification
+run=$(tail -n +"$((start + 1))" "$LOG")
+copied=$(grep -c ': Copied' <<<"$run")
+deleted=$(grep -c ': Deleted' <<<"$run")
+if [ $rc -eq 0 ]; then
+  set_status ok "$copied" "$deleted"
+else
+  err=$(grep ' ERROR ' <<<"$run" | tail -1 | sed 's/^.* ERROR : //')
+  set_status error "$copied" "$deleted" "${err:-exit $rc}"
+  notify-send -a "OneDrive" -i dialog-error -u critical "OneDrive sync failed (exit $rc)" \
+    "${err:-See $LOG}"
+fi
+exit $rc
